@@ -5,7 +5,7 @@
   "description": "Existing company/organization flow graph. No event-time or person-level uniqueness is inferred from these aggregate files.",
   "directed": true,
   "vertices": {
-    "path": "../../../neusight-exp/data/company.parquet",
+    "path": "company.parquet",
     "format": "parquet",
     "columns": {
       "id": "company_rid",
@@ -19,7 +19,7 @@
     }
   },
   "edges": {
-    "path": "../../../neusight-exp/data/company_SwithTo_company.parquet",
+    "path": "company_SwithTo_company.parquet",
     "format": "parquet",
     "columns": {
       "source": "src_group_rid",

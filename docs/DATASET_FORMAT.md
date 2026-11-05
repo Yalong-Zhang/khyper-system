@@ -167,7 +167,7 @@ These examples were checked against the actual headers/schemas in the workspace.
 
 ### 7.1 Existing directed company talent-flow graph
 
-The original files reside in `neusight-exp/data`. This example assumes its descriptor is beside those files; the bundled descriptor instead uses relative paths to reference them externally.
+The bundled example places `directed-example.json` alongside both Parquet tables under `examples/datasets/`. The descriptor resolves each table by its filename.
 
 ```json
 {

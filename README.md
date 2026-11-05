@@ -4,34 +4,73 @@
 
 ![通用数据集选择](docs/dataset-preview.png)
 
-## 启动和选择数据集
+## Windows 快速开始
 
-在项目目录打开 PowerShell，运行 `powershell -NoProfile -ExecutionPolicy Bypass -File .\start.ps1`。默认页面为 http://127.0.0.1:8765 。保持终端运行，按 Ctrl+C 停止。
+### 1. 安装环境并克隆仓库
 
-1. 在页面点击“浏览路径…”选择 JSON 数据集描述文件，或直接填写绝对路径。
-2. 点击“加载数据集”，等待校验和加载完成。
-3. 输入问题，例如“按度数列出前三个节点”或“分析权重最高节点的邻居”。
+需要 Windows x64、Git、Python 3.12+（x64）、CMake 3.20+，以及 Visual Studio 2022 或其 Build Tools。在 Visual Studio Installer 中安装 **使用 C++ 的桌面开发**，确保包含 MSVC x64 编译工具和 Windows SDK。打开新的 PowerShell，确认 `python --version` 和 `cmake --version` 可以运行。
 
-页面提供 `examples/datasets` 下三个描述示例。示例仅引用原有外部数据，不附带复制的数据文件：有向示例、OpenAIRE 无向合著图、DBLP 无向合著图。DBLP 的完整图较大，需足够内存；目前完整实测有向示例和 OpenAIRE，小图测试覆盖 TSV。
-
-**选择的是描述文件，不是上传大文件。** 描述文件映射节点表、边表的路径与字段，格式详见 [DATASET_FORMAT.md](docs/DATASET_FORMAT.md)。两张表可在任何可读本地目录，路径相对于描述文件解析。Python 只发送描述文件路径，C++ 直接读取和校验原文件，并建立内存中的 KHyperGraph；不转换格式、不生成二进制数据缓存。
-
-首次准备依赖或修改 C++ 后，停止服务再运行 `setup.ps1`；已有依赖时可用 `setup.ps1 -SkipInstall`。需要 Python 3.12+、CMake 3.20+ 和 Visual Studio 2022 的“使用 C++ 的桌面开发”组件（MSVC x64 与 Windows SDK）。原生读取器复用项目 PyArrow 附带的 Arrow/Parquet C++ 库；其 Windows ABI 要求使用 MSVC。构建脚本会部署所需 DLL，无须手动配置 PATH。`start.ps1 -Port 8770 -NoBrowser` 可指定测试端口。
-
-## 模型配置
-
-只使用一份 `config.yaml`。填写：
-
-```yaml
-llm:
-  api_key: "你的密钥"
-  url: "https://服务商接口地址/v1"
-  model_name: "准确的模型名称"
+```powershell
+git clone https://github.com/Yalong-Zhang/khyper-system.git
+cd khyper-system
 ```
 
-支持 Chat Completions 原生工具调用，根地址或完整 `/chat/completions` 地址均可。修改配置后重启。默认请求不带服务商特定的 thinking 参数。若服务明确返回工具与推理模式冲突并要求 none，只针对该错误尝试一次工具兼容请求。需要同时推理和工具的其他协议仍需适配。
+后面的命令都在 `start.ps1` 所在的项目目录运行。
 
-真实密钥只由后端读取，`config.yaml` 已被 Git 忽略。可选环境变量会覆盖 YAML；系统不读取旧 api.txt。
+### 2. 创建本地配置
+
+运行 `notepad .\config.yaml`。如果记事本提示文件不存在，选择创建。复制下面的**完整内容**，以 UTF-8 保存。确认文件名是 `config.yaml`，扩展名没有被记事本加成 `.txt`。
+
+```yaml
+server:
+  host: "127.0.0.1"
+  port: 8765
+
+llm:
+  api_key: ""
+  url: ""
+  model_name: ""
+  timeout_seconds: 90
+
+graph:
+  worker: ".runtime/build/Release/khyper_worker.exe"
+  startup_timeout_seconds: 600
+  tool_timeout_seconds: 30
+
+agent:
+  max_tool_calls: 8
+  max_model_calls: 8
+  task_timeout_seconds: 300
+```
+
+首次使用只需填写 `llm` 下的三个空字符串。填入你的 API key、服务商给出的 Chat Completions 基础 URL 或完整的 `/chat/completions` 地址，以及服务商提供的准确模型 ID。所选模型及接口必须支持函数工具调用（`tools` / `tool_calls`）。
+
+`config.yaml` 已被 Git 忽略，真实密钥保存在本地。已有配置时，在原文件内修改对应项即可。修改后重启服务。三个模型字段留空时仍可启动、加载数据和运行本地检查，网页提问需要有效的模型配置。
+
+### 3. 安装依赖并启动
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\start.ps1
+```
+
+安装脚本会建立 `.venv`、安装 Python 依赖并编译 C++ worker。Arrow/Parquet 的 DLL 会和 worker 一起放在 `.runtime/build/Release/`。构建完成后，启动脚本会打开浏览器。也可手动访问 [本地 KHyper 页面](http://127.0.0.1:8765)。保持终端运行，按 Ctrl+C 停止服务。若端口被占用，在启动命令末尾加 `-Port 8770`，并访问新端口。
+
+### 4. 加载示例并运行第一次分析
+
+`examples/datasets/` 提供一份人才流动有向图，包含 `directed-example.json` 和它引用的两份 Parquet 表。描述文件与数据表放在同一目录，克隆后即可直接加载。
+
+1. 在网页的示例列表中点击 **directed-example**，再点 **加载数据集**。也可以手动选择 `examples/datasets/directed-example.json`。
+2. 加载成功后，页面应显示 **788,007 个节点、2,210,046 条边**。
+3. 配好模型后，可以问「哪些公司的流入权重最高？列出前五名。」
+
+如果想先检查数据加载和图统计，可以在项目目录运行以下命令，无需调用模型 API。
+
+```powershell
+.\.venv\Scripts\python.exe backend\maintenance\check_graph.py examples\datasets\directed-example.json
+```
+
+换成自己的数据时，按 [数据集格式](docs/DATASET_FORMAT.md) 创建描述文件并在页面选择它。支持 Parquet 和 TSV 节点表及边表，表路径相对于描述文件所在目录解析。加载时直接读取原文件。
 
 ## 当前能力
 
@@ -60,7 +99,7 @@ backend/                 后端服务、agent、数据加载与工具
   serve.py               启动服务与打开浏览器
   pick_dataset.py        本机文件选择窗口
 frontend/                数据集选择、进度、报告和依据表
-examples/datasets/       引用外部数据的描述文件示例
+examples/datasets/       人才流动示例的描述文件和 Parquet 数据
 tests/                   Python 与 C++ 测试
 docs/                    架构、数据格式及验证说明
 .runtime/                自动生成的缓存、构建产物及临时记录
@@ -73,7 +112,6 @@ docs/                    架构、数据格式及验证说明
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
-.\.venv\Scripts\python.exe backend\maintenance\check_graph.py examples\datasets\openaire-coauthor.json
 ```
 
 测试验证外部文件内容不变、有向和无向指标、两种格式、大整数 ID、孤立节点、错误图拒绝、agent 与 HTTP 调度。`/docs` 为 API 文档。实现细节见 [dataset-selection.md](docs/dataset-selection.md)。

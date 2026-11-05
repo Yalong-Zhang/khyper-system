@@ -69,13 +69,13 @@ batch boundaries, ignored nested columns, empty graphs, int64 boundaries, malfor
 values/schemas/UTF-8, invalid graph structure and asynchronous HTTP failure state.
 No model API calls were made during this migration.
 
-From the project directory:
+From the project directory, benchmark the bundled directed example. To repeat the historical OpenAIRE measurement, pass a descriptor for your own copy of those tables.
 
 ```powershell
 .\setup.ps1 -SkipInstall
 .\.venv\Scripts\python.exe -m pytest -q
 ctest --test-dir .runtime/build --output-on-failure -C Release
-.\.venv\Scripts\python.exe backend/maintenance/benchmark_loading.py examples/datasets/openaire-coauthor.json examples/datasets/directed-example.json --repeats 2 --output .runtime/load-after.json
+.\.venv\Scripts\python.exe backend/maintenance/benchmark_loading.py examples/datasets/directed-example.json --repeats 2 --output .runtime/load-after.json
 ```
 
 Restart the service with `start.ps1`, then select a dataset again to use the new
