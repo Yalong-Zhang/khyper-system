@@ -1,0 +1,32 @@
+{
+  "format": "khyper.graph.v1",
+  "id": "company-talent-flow",
+  "name": "Company Talent Flow",
+  "description": "Existing company/organization flow graph. No event-time or person-level uniqueness is inferred from these aggregate files.",
+  "directed": true,
+  "vertices": {
+    "path": "../../../neusight-exp/data/company.parquet",
+    "format": "parquet",
+    "columns": {
+      "id": "company_rid",
+      "name": "company_name"
+    },
+    "properties": {
+      "industry": "rics_k50",
+      "hq_country": "hq_country",
+      "hq_state": "hq_state",
+      "hq_metro_area": "hq_metro_area"
+    }
+  },
+  "edges": {
+    "path": "../../../neusight-exp/data/company_SwithTo_company.parquet",
+    "format": "parquet",
+    "columns": {
+      "source": "src_group_rid",
+      "target": "dst_group_rid",
+      "weight": "weight"
+    },
+    "weight_unit": "flow_weight",
+    "weight_semantics": "The existing aggregated weight for the ordered origin-to-destination company pair; sums across pairs are not globally deduplicated people."
+  }
+}

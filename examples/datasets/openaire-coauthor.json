@@ -1,0 +1,34 @@
+{
+  "format": "khyper.graph.v1",
+  "id": "openaire-2018-2026-coauthor",
+  "name": "OpenAIRE Coauthorship, 2018–2026",
+  "description": "Authors connected by shared research products; existing stable author IDs are retained.",
+  "directed": false,
+  "vertices": {
+    "path": "../../../dataset/processed/openaire_2018_2026_coauthor/vertices.parquet",
+    "format": "parquet",
+    "columns": {
+      "id": "vertex_id",
+      "name": "name",
+      "type": "vertex_type"
+    },
+    "properties": {
+      "original_id": "original_id",
+      "orcid": "orcid",
+      "organization": "organization",
+      "country": "country"
+    }
+  },
+  "edges": {
+    "path": "../../../dataset/processed/openaire_2018_2026_coauthor/edges.parquet",
+    "format": "parquet",
+    "columns": {
+      "source": "source_id",
+      "target": "destination_id",
+      "weight": "weight",
+      "type": "relation_type"
+    },
+    "weight_unit": "shared_research_products",
+    "weight_semantics": "Number of distinct included collaborative research products shared by the unordered author pair; each product contributes once per pair."
+  }
+}

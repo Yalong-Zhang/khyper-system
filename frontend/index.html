@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>KHyper · 通用图分析</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%23136c5d'/%3E%3Cpath d='M12 10v20m16-20-12 10 12 10' fill='none' stroke='white' stroke-width='3'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script defer src="/assets/app.js"></script>
+</head>
+<body>
+<svg class="icon-library" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/></symbol>
+  <symbol id="i-flow" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="5" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="m7.4 10.8 9.2-4.6m-9.2 7 9.2 4.6"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M5 20V12m7 8V4m7 16v-6"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v.2"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H5v18h14V8zm0 0v5h5M8 12h8m-8 4h6"/></symbol>
+</svg>
+<div class="app-shell">
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="KHyper 首页"><span class="brand-mark">K<span></span></span><span>KHyper<span class="brand-sub">GRAPH ANALYTICS</span></span></a>
+    <div class="workspace-label">工作空间</div>
+    <div class="nav-item active"><svg><use href="#i-grid"/></svg>通用图分析<span class="nav-dot"></span></div>
+    <div class="sidebar-dataset"><div class="eyebrow">当前数据集</div><div class="dataset-name" id="dataset-name"><svg><use href="#i-flow"/></svg>尚未选择数据集</div><p>选择外部图数据集，<br>探索节点、关系与权重。</p><span class="dataset-tag">Parquet · TSV</span></div>
+    <div class="sidebar-bottom"><span class="local-dot"></span>本地工作空间<span class="version">v0.1</span></div>
+  </aside>
+  <main>
+    <header class="topbar"><div class="breadcrumb">工作空间<span>/</span><strong>通用图分析</strong></div><button class="text-button" id="about-button"><svg><use href="#i-info"/></svg>数据口径</button></header>
+    <div class="page-content">
+      <section class="intro"><div class="eyebrow">GRAPH DATA EXPLORER</div><div class="title-row"><h1>让图数据，回答你的问题。</h1><span id="health-badge" class="status-badge loading"><span class="status-dot"></span><span id="health-label">尚未选择数据集</span></span></div><p class="intro-description">提出一个问题，交给分析助手查询、比较，并整理成有据可查的结论。</p></section>
+      <section class="dataset-picker question-card"><div class="section-top"><h2>选择图数据集</h2><span class="subtle">引用外部文件 · 原位读取</span></div><p class="dataset-description">选择包含图文件路径和字段映射的 JSON 描述文件，数据保留在原目录。</p><div class="path-row"><input id="dataset-path" aria-label="数据集描述文件路径" placeholder="输入 dataset.json 的绝对路径"><button id="browse-dataset" type="button">浏览路径…</button><button id="load-dataset" type="button" class="primary-button">加载数据集</button></div><div class="examples" id="dataset-examples"><span>现有数据描述示例</span></div><p id="dataset-state" aria-live="polite">尚未选择数据集</p></section>
+      <section class="dataset-stats" aria-label="数据集概览"><div class="stat"><span class="stat-icon"><svg><use href="#i-grid"/></svg></span><div><div class="stat-label">图节点</div><div class="stat-value" id="stat-vertices">—<span>个节点</span></div></div></div><div class="stat"><span class="stat-icon"><svg><use href="#i-flow"/></svg></span><div><div class="stat-label">图关系</div><div class="stat-value" id="stat-edges">—<span>条记录</span></div></div></div><div class="stat"><span class="stat-icon"><svg><use href="#i-chart"/></svg></span><div><div class="stat-label">分析方式</div><div class="stat-value text-stat">关联强度 <span>与</span> 邻居数量</div></div></div></section>
+      <section class="question-card"><div class="section-top"><h2><span class="section-number">01</span>你想了解什么？</h2><span class="subtle">每次分析独立进行</span></div><form id="question-form"><label class="sr-only" for="question">输入通用图分析问题</label><textarea id="question" name="question" maxlength="2000" rows="3" placeholder="例如：找出关联最多的前十个节点，并分析第一名的邻居。"></textarea><div class="question-bottom"><span class="input-hint"><kbd>Ctrl</kbd> + <kbd>Enter</kbd> 开始分析</span><div class="form-actions"><button class="cancel-button hidden" type="button" id="cancel-button">停止</button><button class="primary-button" type="submit" id="submit-button" disabled>开始分析<svg><use href="#i-arrow"/></svg></button></div></div></form><div class="examples"><span>试试这些问题</span><button type="button" data-question="哪些节点连接的不同节点最多？给我看前十名。">哪些节点联系最广？</button><button type="button" data-question="最活跃的节点主要与谁有联系？这些联系是否集中在少数节点上？">最活跃节点主要联系谁？</button><button type="button" data-question="这份数据记录的是什么？它能用来分析哪些问题？">这份数据能分析什么？</button><button type="button" data-question="这份数据里，哪些信息缺失得比较严重？">哪些信息缺失比较多？</button><button type="button" data-question="节点主要集中在哪些类别？不同类别的数量差距有多大？">节点主要集中在哪些类别？</button><button type="button" data-question="节点最多的那个类别里，哪些节点最活跃？">最大类别里谁最活跃？</button><button type="button" data-question="图里一共有多少条关系？总权重和平均权重分别是多少？">关系的规模有多大？</button></div></section>
+      <div class="notice hidden" id="notice" role="alert"></div>
+      <div class="analysis-grid">
+        <section class="report-card"><div class="section-top report-top"><h2><span class="section-number">02</span>分析报告</h2><button class="text-button hidden" id="copy-button"><svg><use href="#i-copy"/></svg><span>复制报告</span></button></div><div id="report-empty" class="report-empty"><div class="empty-graphic"><svg viewBox="0 0 100 78" aria-hidden="true"><path class="empty-line" d="m17 46 25-23 18 31 25-24M42 23l43 7M17 46l43 8"/><circle cx="17" cy="46" r="6"/><circle cx="42" cy="23" r="8"/><circle cx="60" cy="54" r="6"/><circle cx="85" cy="30" r="5"/></svg></div><h3>从一个好问题开始</h3><p>助手将调用图统计工具，<br>把图中的关联数据整理成清晰的发现。</p><div class="empty-chips"><span>查询</span><span class="chip-arrow">→</span><span>比较</span><span class="chip-arrow">→</span><span>形成结论</span></div></div><div class="report-loading hidden" id="report-loading"><span class="spinner"></span><div><h3>分析正在进行</h3><p id="current-action">正在理解你的问题…</p></div></div><article id="report" class="markdown hidden"></article><div class="report-meta hidden" id="report-meta"></div><div id="evidence-section" class="evidence-section hidden"><h3>数据依据<span id="evidence-count"></span></h3><p>以下结果由图统计工具实际计算，可展开核对。</p><div id="evidence-list"></div></div></section>
+        <aside class="progress-card"><div class="section-top"><h2>执行进度</h2><span class="progress-pill" id="progress-pill">等待问题</span></div><div class="progress-intro" id="progress-intro">开始后，这里会显示每一步<br>正在查询什么、完成了什么。</div><ol class="step-list" id="step-list" aria-live="polite" aria-relevant="additions text"></ol><div class="progress-footer"><span class="small-spark">✧</span><span>逐步查询，基于数据回答。</span></div></aside>
+      </div>
+      <footer class="page-footer"><span>KHyper <span class="footer-divider">/</span> 通用图分析工作空间</span><span id="model-label">单 agent · 基础图统计</span></footer>
+    </div>
+  </main>
+</div>
+<dialog id="about-dialog"><div class="dialog-header"><h2>数据集与统计口径</h2><button class="icon-button" id="close-dialog" aria-label="关闭"><svg><use href="#i-close"/></svg></button></div><p>选择 khyper.graph.v1 格式的 JSON 描述文件。描述文件引用已准备好的 Parquet 或 TSV 节点表和边表，直接读取原路径，不上传、不复制、不生成预处理文件。</p><p>无向图使用邻居、度数和强度；有向图还区分入与出。权重含义由数据集声明。文件必须无自环、无重复逻辑边，并保留孤立节点。</p><p>数据格式详见项目 docs/DATASET_FORMAT.md。每次分析独立进行，切换数据集会清空当前报告。</p></dialog>
+</body>
+</html>

@@ -1,0 +1,35 @@
+{
+  "format": "khyper.graph.v1",
+  "id": "dblp-2026-10-03-coauthor",
+  "name": "DBLP Coauthorship, 2026-10-03",
+  "description": "One vertex per distinct author string in the prepared DBLP export. This export does not establish real-person disambiguation.",
+  "directed": false,
+  "vertices": {
+    "path": "../../../dataset/processed/dblp_2026_10_03_coauthor/authors.tsv",
+    "format": "tsv",
+    "columns": {
+      "id": "author_id",
+      "name": "author_name"
+    },
+    "types": {
+      "author_id": "int64",
+      "author_name": "string"
+    }
+  },
+  "edges": {
+    "path": "../../../dataset/processed/dblp_2026_10_03_coauthor/coauthor_edges.tsv",
+    "format": "tsv",
+    "columns": {
+      "source": "source",
+      "target": "target",
+      "weight": "shared_publication_count"
+    },
+    "types": {
+      "source": "int64",
+      "target": "int64",
+      "shared_publication_count": "int64"
+    },
+    "weight_unit": "shared_publications",
+    "weight_semantics": "Number of retained DBLP publication records coauthored by the unordered author pair, under the record-type filters documented in metadata.json."
+  }
+}
