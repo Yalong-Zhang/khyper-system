@@ -94,7 +94,10 @@ class GraphWorker:
             await self.stop()
             self.info = {}
             self.state = "error"
-            self.error = (str(exc) + (" " + detail if detail else ""))[:700] or "加载失败或已中止。"
+            message = str(exc)
+            if detail and detail not in message:
+                message += " " + detail
+            self.error = message[:700] or "加载失败或已中止。"
             raise
 
     async def call(self, tool: str, arguments: dict) -> dict:

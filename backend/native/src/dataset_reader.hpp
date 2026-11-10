@@ -9,7 +9,7 @@ namespace dataset {
 using Record = khypergraph::PropertyMap;
 using Progress = std::function<void(const std::string&, std::uint64_t)>;
 
-// Each reader streams bounded Arrow batches or one quoted TSV record at a time.
+// Each reader streams bounded Arrow batches or one TSV record at a time.
 class Table {
 public:
     Table(const nlohmann::json& spec, const std::filesystem::path& base,

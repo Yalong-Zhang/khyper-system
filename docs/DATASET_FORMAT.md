@@ -153,13 +153,18 @@ Null optional properties remain null and are not replaced by an empty string or 
 
 A TSV table MUST be UTF-8, have exactly one header row, and use the literal tab character as its delimiter. LF and CRLF line endings are accepted. A UTF-8 BOM is allowed only before the header.
 
-Fields use conventional delimited-text quoting: double quotes enclose fields containing tabs, quotes, or line breaks, and embedded double quotes are doubled. Comments and additional pre-header metadata lines are not allowed. Each parsed record MUST have the same field count as the header, and header names MUST be unique. Blank data records are invalid; a final line terminator is allowed.
+The optional table-level `quoting` setting selects the TSV dialect:
+
+- `"quoting": "csv"` (default): double quotes enclose fields containing tabs, quotes, or line breaks, and embedded double quotes are doubled.
+- `"quoting": "none"`: fields are separated by literal tabs and records by LF or CRLF; all double quotes are ordinary characters and are preserved. Fields cannot contain literal tabs or line breaks. Use this for raw tab-separated exports such as the existing DBLP files, whose author names include `Felix "FX" Lindner`.
+
+The setting applies to both the header and data rows, is configured independently for each table, and is not accepted for Parquet. Comments and additional pre-header metadata lines are not allowed. Each parsed record MUST have the same field count as the header, and header names MUST be unique. Blank data records are invalid; a final line terminator is allowed.
 
 For `format: tsv`, the table specification MUST additionally contain `types`, mapping **every mapped physical column** to one of `int64`, `float64`, `bool`, or `string`. Structural IDs and weights use `int64`; names and type labels use `string`.
 
 Optional-property empty TSV fields denote null. A null vertex name uses the ID fallback. Literal strings such as `NA` and `null` are ordinary strings, not implicit null markers. Structural ID/endpoint/weight fields MUST NOT be empty. Booleans are exactly `true` or `false`. Finite float text uses decimal/scientific notation without thousands separators. An empty string property and a null property are intentionally not distinguished by this TSV profile; use Parquet when that distinction matters.
 
-Extra unmapped TSV columns may exist and are ignored. Parsing MUST respect quotes rather than splitting every physical line on tab characters.
+Extra unmapped TSV columns may exist and are ignored. Parsing MUST follow the declared quoting mode; CSV-style quoted fields can span physical lines, while unquoted TSV preserves literal quote characters.
 
 ## 7. Descriptors for the existing datasets
 
@@ -242,12 +247,14 @@ Directory: `dataset/processed/dblp_2026_10_03_coauthor`.
   "vertices": {
     "path": "authors.tsv",
     "format": "tsv",
+    "quoting": "none",
     "columns": {"id": "author_id", "name": "author_name"},
     "types": {"author_id": "int64", "author_name": "string"}
   },
   "edges": {
     "path": "coauthor_edges.tsv",
     "format": "tsv",
+    "quoting": "none",
     "columns": {"source": "source", "target": "target", "weight": "shared_publication_count"},
     "types": {"source": "int64", "target": "int64", "shared_publication_count": "int64"},
     "weight_unit": "shared_publications",

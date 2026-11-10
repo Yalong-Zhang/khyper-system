@@ -233,7 +233,8 @@ public:
             graph_.add_vertex(std::move(v));
         },progress);
         const auto count=ids_.size();
-        in_.resize(count);out_.resize(count);unique_.resize(count);inflow_.resize(count);outflow_.resize(count);
+        out_.resize(count);outflow_.resize(count);
+        if(directed_){in_.resize(count);inflow_.resize(count);unique_.resize(count);}
         edges.read([&](dataset::Record&& record) {
             const I src=std::get<I>(record.at("source")),dst=std::get<I>(record.at("target")),w=std::get<I>(record.at("weight"));
             ++raw_edges_;
@@ -243,16 +244,18 @@ public:
             const auto u=source->second,v=target->second;
             Edge edge;edge.kind=EdgeKind::Relation;
             edge.endpoints={{VertexId{u},directed_?EndpointRole::Tail:EndpointRole::Member},{VertexId{v},directed_?EndpointRole::Head:EndpointRole::Member}};
-            record.erase("source");record.erase("target");edge.properties=std::move(record);
+            record.erase("source");record.erase("target");record.shrink_to_fit();edge.properties=std::move(record);
             graph_.add_edge(std::move(edge));
-            out_[u].emplace_back(v,w);in_[v].emplace_back(u,w);
-            inflow_[v]=checked_add(inflow_[v],w);outflow_[u]=checked_add(outflow_[u],w);
-            if(!directed_){out_[v].emplace_back(u,w);in_[u].emplace_back(v,w);inflow_[u]=checked_add(inflow_[u],w);outflow_[v]=checked_add(outflow_[v],w);}
+            out_[u].emplace_back(v,w);outflow_[u]=checked_add(outflow_[u],w);
+            if(directed_){in_[v].emplace_back(u,w);inflow_[v]=checked_add(inflow_[v],w);}
+            else {out_[v].emplace_back(u,w);outflow_[v]=checked_add(outflow_[v],w);}
             total_weight_=checked_add(total_weight_,w);
         },progress);
         progress("validating",0);
         for (std::size_t i=0;i<count;++i) {
-            compact(in_[i]); compact(out_[i]);
+            compact(out_[i]);
+            if(!directed_)continue; // Undirected incoming and outgoing lists are identical.
+            compact(in_[i]);
             std::size_t a=0,b=0,partners=0;
             while(a<in_[i].size() || b<out_[i].size()) {
                 ++partners;

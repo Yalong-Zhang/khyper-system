@@ -72,10 +72,12 @@ def test_native_validation_rejects_bad_values(tmp_path,field,value):
     load_and_check(path,error=f'edges record 2, {field}:')
 
 
-def test_quoted_tsv_unicode_paths_and_nullable_properties(tmp_path):
+@pytest.mark.parametrize('quoting', [None, 'csv'])
+def test_quoted_tsv_unicode_paths_and_nullable_properties(tmp_path, quoting):
     folder=tmp_path/'带空格 中文';folder.mkdir()
     path=fixture(folder,tsv=True)
     d=json.loads(path.read_text());d['vertices']['properties']={'score':'score','flag':'flag'}
+    if quoting is not None:d['vertices']['quoting']=quoting
     d['vertices']['types'].update(score='float64',flag='bool')
     names=['含\t制表符','换\r\n行与"引号"','中文节点','']
     with (folder/'nodes.tsv').open('w',encoding='utf-8-sig',newline='') as f:
@@ -89,6 +91,55 @@ def test_quoted_tsv_unicode_paths_and_nullable_properties(tmp_path):
         result=await worker.call('search_vertices',{'query':'10'})
         assert result['rows'][0]['properties']=={'score':12.5,'flag':True}
     load_and_check(path,check)
+
+
+@pytest.mark.parametrize('eol,final_newline', [('\n',True),('\r\n',False)])
+def test_raw_tsv_preserves_dblp_author_quotes(tmp_path,eol,final_newline):
+    path=fixture(tmp_path,tsv=True)
+    d=json.loads(path.read_text())
+    d['vertices']['quoting']=d['edges']['quoting']='none'
+    ids=[10,20,614613821311819618,40,50,60]
+    names=['Felix "FX" Lindner','"Leading name"','"unfinished','Repeated "" quote','Trailing"','']
+    content=eol.join(['vid\ttitle',*(f'{i}\t{name}' for i,name in zip(ids,names))])
+    if final_newline:content+=eol
+    (tmp_path/'nodes.tsv').write_bytes(('\ufeff'+content).encode('utf-8'))
+    path.write_text(json.dumps(d),encoding='utf-8')
+    before={name:(tmp_path/name).read_bytes() for name in ('nodes.tsv','links.tsv')}
+    async def check(worker):
+        assert worker.info['vertices']==6 and worker.info['edges']==3
+        for vertex,name in zip(ids,names):
+            result=await worker.call('search_vertices',{'query':str(vertex)})
+            assert result['rows'][0]['name']==(name or str(vertex))
+    load_and_check(path,check)
+    assert before=={name:(tmp_path/name).read_bytes() for name in before}
+
+
+@pytest.mark.parametrize('row,error', [
+    ('10\t20\t"7"\n','edges record 1, w: invalid decimal int64'),
+    ('10\t20\t7\t"extra"\n','TSV field count mismatch'),
+])
+def test_raw_tsv_still_validates_numbers_and_field_counts(tmp_path,row,error):
+    path=fixture(tmp_path,tsv=True)
+    d=json.loads(path.read_text());d['edges']['quoting']='none'
+    path.write_text(json.dumps(d),encoding='utf-8')
+    (tmp_path/'links.tsv').write_text('u\tv\tw\n'+row,encoding='utf-8')
+    load_and_check(path,error=error)
+
+
+@pytest.mark.parametrize('tsv,quoting', [(True,'guess'),(True,None),(True,False),(False,'none')])
+def test_invalid_tsv_quoting_is_rejected_by_preflight_and_native(tmp_path,tsv,quoting):
+    path=fixture(tmp_path,tsv=tsv)
+    d=json.loads(path.read_text());d['vertices']['quoting']=quoting
+    path.write_text(json.dumps(d),encoding='utf-8')
+    with pytest.raises(ValueError,match='quoting'):descriptor(str(path))
+    async def check():
+        worker=GraphWorker(load_config())
+        try:
+            # Exercise native descriptor validation independently of Python preflight.
+            with pytest.raises(RuntimeError,match='quoting'):
+                await worker.load({'_descriptor':path})
+        finally:await worker.stop()
+    asyncio.run(check())
 
 
 @pytest.mark.parametrize('bad', ['01','-0','+1','9223372036854775808','true',''])

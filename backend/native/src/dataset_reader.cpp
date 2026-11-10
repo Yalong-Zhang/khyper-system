@@ -7,6 +7,7 @@
 #include <parquet/file_reader.h>
 #include <charconv>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <fstream>
 #include <numeric>
@@ -67,8 +68,22 @@ json metadata(const json& d) {
             {"edge_properties",d["edges"].value("properties",json::object())}};
 }
 
+// Quoting is explicit: raw TSV exports can contain literal quotes in names.
 // Binary input preserves quoted newlines; BOM is consumed only at the header.
-static bool tsv_record(std::istream& input, std::vector<std::string>& values) {
+static bool tsv_record(std::istream& input, std::vector<std::string>& values, bool quoted_fields) {
+    if (!quoted_fields) {
+        std::string line;
+        if (!std::getline(input, line)) return false;
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        values.clear();
+        std::size_t begin = 0;
+        for (;;) {
+            const auto end = line.find('\t', begin);
+            values.emplace_back(line.substr(begin, end == std::string::npos ? end : end - begin));
+            if (end == std::string::npos) return true;
+            begin = end + 1;
+        }
+    }
     values.clear(); std::string value; bool quoted=false, closed=false, started=false;
     for (;;) {
         const int next=input.get();
@@ -105,6 +120,7 @@ static void skip_bom(std::istream& in) {
 struct Table::Impl {
     struct Field {std::string role,name,type; bool structural;};
     fs::path path;std::string kind,format;
+    bool quoted_fields = true;
     std::uintmax_t size;fs::file_time_type modified;
     std::vector<Field> selected;
     std::vector<std::string> header;
@@ -164,10 +180,16 @@ struct Table::Impl {
 
 Table::Table(const json& spec, const fs::path& base, const std::string& kind):impl_(std::make_unique<Impl>()) {
     auto& t=*impl_;t.kind=kind;
-    auto allowed=std::set<std::string>{"path","format","columns","properties","types"};
+    auto allowed=std::set<std::string>{"path","format","columns","properties","types","quoting"};
     if(kind=="edges"){allowed.insert("weight_semantics");allowed.insert("weight_unit");}
     fields(spec,{"path","format","columns"},allowed,kind);
     require(nonempty(spec["path"]) && (spec["format"]=="parquet" || spec["format"]=="tsv"),kind+": invalid path or format");
+    if (spec.contains("quoting")) {
+        require(spec["format"] == "tsv" && spec["quoting"].is_string() &&
+                (spec["quoting"] == "csv" || spec["quoting"] == "none"),
+                kind + ": quoting is TSV-only and must be csv or none");
+        t.quoted_fields = spec["quoting"] == "csv";
+    }
     const auto path_text=spec["path"].get<std::string>();
     t.path=fs::weakly_canonical(base/fs::path(std::u8string(path_text.begin(),path_text.end())));
     require(fs::is_regular_file(t.path),kind+": source is not a regular local file");
@@ -209,7 +231,7 @@ Table::Table(const json& spec, const fs::path& base, const std::string& kind):im
     } else {
         require(spec.contains("types") && spec["types"].is_object() && spec["types"].size()==names.size(),kind+": TSV types must cover all mapped columns");
         std::ifstream input(t.path,std::ios::binary);require(input.good(),kind+": cannot read TSV");skip_bom(input);
-        require(tsv_record(input,t.header),kind+": missing TSV header");std::set<std::string> unique;
+        require(tsv_record(input,t.header,t.quoted_fields),kind+": missing TSV header");std::set<std::string> unique;
         for(const auto& name:t.header) {
             require(arrow::util::ValidateUTF8(name),kind+": invalid UTF-8 TSV header");
             require(unique.insert(name).second,kind+": duplicate TSV header");
@@ -219,6 +241,22 @@ Table::Table(const json& spec, const fs::path& base, const std::string& kind):im
             field.type=spec["types"][field.name];
             require(field.type=="int64" || field.type=="float64" || field.type=="bool" || field.type=="string",kind+": unsupported TSV type");
             require(unique.contains(field.name),kind+": missing TSV column "+field.name);
+        }
+        if (!t.quoted_fields) {
+            // Raw TSV has one record per physical line. Count without materializing
+            // rows so graph vectors reserve once instead of copying millions of
+            // property-bearing edges during geometric capacity growth.
+            std::array<char, 65536> buffer;
+            bool any = false;
+            char last = '\n';
+            while (input.read(buffer.data(), buffer.size()) || input.gcount()) {
+                const auto count = input.gcount();
+                t.hint += std::count(buffer.data(), buffer.data() + count, '\n');
+                any = true;
+                last = buffer[static_cast<std::size_t>(count) - 1];
+            }
+            require(!input.bad(),kind+": TSV read failure while counting records");
+            if (any && last != '\n') ++t.hint;
         }
     }
     for(const auto& field:t.selected)if(spec["columns"].contains(field.role))
@@ -263,12 +301,12 @@ void Table::read(const std::function<void(Record&&)>& consume,const Progress& pr
         }
     } else {
         std::ifstream input(t.path,std::ios::binary);require(input.good(),t.kind+": cannot read TSV");skip_bom(input);
-        std::vector<std::string> values;require(tsv_record(input,values) && values==t.header,t.kind+": TSV header changed during loading");
+        std::vector<std::string> values;require(tsv_record(input,values,t.quoted_fields) && values==t.header,t.kind+": TSV header changed during loading");
         std::vector<std::size_t> positions;
         for(const auto& field:t.selected)positions.push_back(std::find(t.header.begin(),t.header.end(),field.name)-t.header.begin());
         for(;;) {
             bool available;
-            try {available=tsv_record(input,values);}catch(const std::exception& e){throw std::runtime_error(t.kind+" record "+std::to_string(ordinal+1)+": "+e.what());}
+            try {available=tsv_record(input,values,t.quoted_fields);}catch(const std::exception& e){throw std::runtime_error(t.kind+" record "+std::to_string(ordinal+1)+": "+e.what());}
             if(!available)break;
             ++ordinal;
             if(values.size()!=t.header.size())throw std::runtime_error(t.kind+" record "+std::to_string(ordinal)+": TSV field count mismatch");

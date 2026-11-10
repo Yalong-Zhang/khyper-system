@@ -110,6 +110,7 @@ QueryEngine::Predicate QueryEngine::selection(const json& p,bool edges) const {
     const auto own=filter(p.value("filter",json::array()),edges);
     if(!edges)return own;
     const auto source=filter(p.value("source_filter",json::array()),false),target=filter(p.value("target_filter",json::array()),false);
+    if(p.value("source_filter",json::array()).empty() && p.value("target_filter",json::array()).empty())return own;
     return [this,own,source,target](std::size_t row){if(!own(row))return false;const auto [a,b]=endpoints(row);return source(a) && target(b);};
 }
 bool QueryEngine::handles(const std::string& op) {
@@ -191,14 +192,20 @@ json QueryEngine::aggregate(const json& p,bool edges) const {
     const auto count=edges?graph_.edges().size():ids_.size();std::size_t matched=0;
     for(std::size_t row=0;row<count;++row) {
         if(!selected(row))continue;++matched;
-        std::vector<Value> keys;json key=json::array();for(const auto& f:group_fields){
-            auto item=value(row,f);
-            // Equal floating zeros must share one group despite distinct JSON spellings.
-            if(auto number=std::get_if<double>(&item);number && *number==0.0)*number=0.0;
-            keys.push_back(std::move(item));key.push_back(encode(keys.back()));
+        auto found=groups.begin();
+        // A global aggregate has one fixed group; avoid serializing [] and doing
+        // map lookups once per row on multi-million-edge graphs.
+        if(!group_fields.empty()) {
+            std::vector<Value> keys;json key=json::array();for(const auto& f:group_fields){
+                auto item=value(row,f);
+                // Equal floating zeros must share one group despite distinct JSON spellings.
+                if(auto number=std::get_if<double>(&item);number && *number==0.0)*number=0.0;
+                keys.push_back(std::move(item));key.push_back(encode(keys.back()));
+            }
+            const auto encoded=key.dump();
+            found=groups.find(encoded);
+            if(found==groups.end()){expect(groups.size()<100000,"group limit exceeded (100000); narrow filters or group by fewer categories");found=groups.emplace(encoded,Group{std::move(keys),std::vector<Cell>(aggregations.size())}).first;}
         }
-        auto found=groups.find(key.dump());
-        if(found==groups.end()){expect(groups.size()<100000,"group limit exceeded (100000); narrow filters or group by fewer categories");found=groups.emplace(key.dump(),Group{std::move(keys),std::vector<Cell>(aggregations.size())}).first;}
         for(std::size_t j=0;j<aggregations.size();++j) {
             const auto& spec=aggregations[j];auto& cell=found->second.cells[j];
             const auto current=spec.field?value(row,*spec.field):Value{};

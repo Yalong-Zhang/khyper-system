@@ -21,12 +21,14 @@ def descriptor(path: str) -> dict:
         raise ValueError("description 必须为字符串。")
     for kind in ("vertices", "edges"):
         t=d[kind]
-        allowed={"path","format","columns","properties","types"}
+        allowed={"path","format","columns","properties","types","quoting"}
         if kind=="edges":allowed|={"weight_semantics","weight_unit"}
         if not isinstance(t,dict) or not {"path","format","columns"}<=t.keys() or t.keys()-allowed:
             raise ValueError(f"{kind}: 无效表定义。")
         if t["format"] not in ("parquet","tsv") or not isinstance(t["path"],str):
             raise ValueError(f"{kind}: 仅支持本地 Parquet / TSV 文件。")
+        if 'quoting' in t and (t['format']!='tsv' or t['quoting'] not in ('csv','none')):
+            raise ValueError(f'{kind}: quoting 仅适用于 TSV，必须为 csv 或 none。')
         p=(file.parent/t["path"]).resolve(strict=True)
         if not p.is_file():raise ValueError(f"{kind}: 路径不是文件。")
         cols=t["columns"];props=t.get("properties",{})
