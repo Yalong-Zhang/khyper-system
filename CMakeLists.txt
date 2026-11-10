@@ -21,7 +21,7 @@ set_target_properties(arrow_shared PROPERTIES IMPORTED_IMPLIB "${ARROW_ROOT}/arr
 add_library(parquet_shared SHARED IMPORTED)
 set_target_properties(parquet_shared PROPERTIES IMPORTED_IMPLIB "${ARROW_ROOT}/parquet.lib"
                       IMPORTED_LOCATION "${ARROW_ROOT}/parquet.dll")
-add_executable(khyper_worker backend/native/src/worker.cpp backend/native/src/dataset_reader.cpp backend/native/src/query_engine.cpp)
+add_executable(khyper_worker backend/native/src/worker.cpp backend/native/src/dataset_reader.cpp backend/native/src/query_engine.cpp backend/native/src/leiden.cpp)
 target_link_libraries(khyper_worker PRIVATE khypergraph arrow_shared parquet_shared)
 target_include_directories(khyper_worker SYSTEM PRIVATE "${ARROW_ROOT}/include")
 add_custom_command(TARGET khyper_worker POST_BUILD

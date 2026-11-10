@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import os
 import subprocess
 from collections import deque
@@ -20,6 +21,12 @@ def js_safe(value):
 class GraphWorker:
     def __init__(self, config: dict):
         self.config = config["graph"]
+        self.leiden_timeout = min(
+            self.config.get("leiden_timeout_seconds", 180.0),
+            max(0.001, config["agent"]["task_timeout_seconds"] - 10.0),
+        )
+        if not math.isfinite(self.leiden_timeout) or not 0 < self.leiden_timeout <= 600:
+            raise ValueError("graph.leiden_timeout_seconds must be in (0, 600]")
         self.process: asyncio.subprocess.Process | None = None
         self.lock = asyncio.Lock()
         self.info: dict = {}
@@ -97,12 +104,18 @@ class GraphWorker:
             validate_arguments(tool, arguments, self.info.get("directed", True))
             self.sequence += 1
             request_id = self.sequence
-            payload = json.dumps({"id": request_id, "tool": tool, "arguments": arguments}, ensure_ascii=False)
+            request = {"id": request_id, "tool": tool, "arguments": arguments}
+            timeout = self.config["tool_timeout_seconds"]
+            if tool == "detect_communities_leiden":
+                request["execution_timeout_seconds"] = self.leiden_timeout
+                # Native cooperative timeout returns an error while retaining the loaded graph.
+                timeout = self.leiden_timeout + 5.0
+            payload = json.dumps(request, ensure_ascii=False)
             assert self.process and self.process.stdin and self.process.stdout
             try:
                 self.process.stdin.write((payload + "\n").encode("utf-8"))
                 await self.process.stdin.drain()
-                line = await asyncio.wait_for(self.process.stdout.readline(), self.config["tool_timeout_seconds"])
+                line = await asyncio.wait_for(self.process.stdout.readline(), timeout)
                 if not line:
                     raise RuntimeError("图工具意外退出。")
                 response = json.loads(line)

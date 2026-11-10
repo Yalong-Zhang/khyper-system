@@ -85,7 +85,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\start.ps1
 - 通用查询：节点／边属性筛选、端点属性筛选、字段投影和排序；支持 AND 与 eq/ne/in/gt/gte/lt/lte/is_null/is_not_null。
 - 分组统计：节点／边分组、count/sum/avg/min/max，先计算全部匹配记录再限制输出行数。
 - 排名支持候选节点属性筛选；邻居支持邻居属性筛选。指标仍基于完整图，邻居 share 分母仍为完整方向权重。
-- 暂无中心性、社区发现、roll-up、OR、诱导子图计算或跨任务追问。
+- 全局 Leiden 社区检测：C++ 执行，agent 选择分辨率 gamma，默认使用边权。有向输入按无序节点对转为无向图，双向权重相加；不加权时每个无序节点对计一条单位权重边。
+- 暂无中心性、roll-up、OR、诱导子图计算或跨任务追问。
+
+加载数据后，可以直接问“这个网络有哪些主要社区？各自规模有多大？”。报告会说明 gamma、投影方式、社区数量及成员样例；样例按节点 ID 排序，不代表重要性排名。工具分别返回所选 gamma 的目标值 `modularity_gamma` 和 gamma=1 的标准模块度 `modularity_standard`，都在最初的无向投影图上计算，不能通过比较不同 gamma 的目标值自动选出最佳分辨率。默认单次检测最多 180 秒（同时受整次任务时间预算限制），可在现有 `config.yaml` 的 `graph` 下添加 `leiden_timeout_seconds` 调整。
 
 ## 文件组织
 

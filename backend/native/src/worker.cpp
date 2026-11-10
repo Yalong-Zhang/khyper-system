@@ -1,13 +1,16 @@
 #include "khypergraph/hyper_graph.hpp"
 #include "dataset_reader.hpp"
 #include "query_engine.hpp"
+#include "leiden.hpp"
 #include "nlohmann/json.hpp"
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cctype>
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <cmath>
 #include <numeric>
 #include <stdexcept>
 #include <unordered_map>
@@ -85,6 +88,126 @@ class OrdinaryGraph {
         }
         throw std::invalid_argument("unsupported ranking metric for this weighted/unweighted tool");
     }
+
+    json detect_communities(const json& parameters, double timeout_seconds) const {
+        const auto started = std::chrono::steady_clock::now();
+        if (!std::isfinite(timeout_seconds) || timeout_seconds <= 0.0 || timeout_seconds > 600.0) {
+            throw std::invalid_argument("Leiden execution timeout must be finite and in (0, 600]");
+        }
+        const auto check_deadline = [&]() {
+            if (std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count() >= timeout_seconds) {
+                throw std::runtime_error("Leiden execution time budget exceeded; retry with a smaller graph or larger server timeout");
+            }
+        };
+        std::uint64_t work = 0;
+        const auto check_budget = [&]() {
+            if ((work++ % 4096) == 0) check_deadline();
+        };
+        check_deadline();
+        leiden::Parameters settings;
+        settings.gamma = parameters.at("gamma").get<double>();
+        if (!std::isfinite(settings.gamma) || settings.gamma < 1e-6 || settings.gamma > 1000.0) {
+            throw std::invalid_argument("Leiden gamma must be in [0.000001, 1000]");
+        }
+        const auto seed = parameters.value("seed", I{20261029});
+        if (seed < 0 || seed > 2147483647) throw std::invalid_argument("invalid Leiden seed");
+        settings.seed = static_cast<std::uint64_t>(seed);
+        const bool weighted = parameters.value("weighted", true);
+        const auto take_limit = static_cast<std::size_t>(limit(parameters));
+        if (ids_.size() >= std::numeric_limits<std::uint32_t>::max()) {
+            throw std::invalid_argument("Leiden vertex count exceeds uint32 capacity");
+        }
+
+        // Stable numeric external-ID ordering makes node scans independent of file order.
+        std::vector<std::size_t> original(ids_.size());
+        std::iota(original.begin(), original.end(), 0);
+        std::sort(original.begin(), original.end(), [&](auto a, auto b) {return ids_[a] < ids_[b];});
+        check_deadline();
+        std::vector<std::uint32_t> remap(ids_.size());
+        for (std::size_t i = 0; i < original.size(); ++i) {
+            check_budget();
+            remap[original[i]] = static_cast<std::uint32_t>(i);
+        }
+        struct Pair {std::uint32_t source, target; I weight;};
+        std::vector<Pair> pairs;
+        pairs.reserve(graph_.edges().size());
+        std::size_t ignored_zero_edges = 0;
+        for (const auto& edge : graph_.edges()) {
+            check_budget();
+            const auto weight = weighted ? std::get<I>(edge.properties.at("weight")) : I{1};
+            if (weight == 0) {++ignored_zero_edges; continue;}
+            auto source = remap[edge.endpoints[0].vertex.value];
+            auto target = remap[edge.endpoints[1].vertex.value];
+            if (source > target) std::swap(source, target);
+            pairs.push_back({source, target, weight});
+        }
+        std::sort(pairs.begin(), pairs.end(), [](const Pair& a, const Pair& b) {
+            return std::pair{a.source, a.target} < std::pair{b.source, b.target};
+        });
+        check_deadline();
+        std::vector<leiden::Edge> projected;
+        I projected_weight = 0;
+        for (std::size_t i = 0; i < pairs.size();) {
+            check_budget();
+            const auto source = pairs[i].source, target = pairs[i].target;
+            I weight = pairs[i++].weight;
+            while (i < pairs.size() && pairs[i].source == source && pairs[i].target == target) {
+                check_budget();
+                if (weighted) weight = checked_add(weight, pairs[i].weight);
+                ++i;
+            }
+            projected_weight = checked_add(projected_weight, weight);
+            projected.push_back({source, target, static_cast<double>(weight)});
+        }
+        const auto projected_edges = projected.size();
+        // The original graph remains intact; release this temporary edge list before Leiden.
+        std::vector<Pair>().swap(pairs);
+        const auto result = leiden::detect(ids_.size(), std::move(projected), settings, check_budget);
+        // Build JSON only for returned rows, rather than for every community in the graph.
+        struct Community {std::size_t id, size = 0; std::array<std::size_t, 5> members{};};
+        std::vector<Community> groups;
+        for (std::size_t vertex_index = 0; vertex_index < result.communities.size(); ++vertex_index) {
+            check_budget();
+            const auto community = result.communities[vertex_index];
+            if (community >= groups.size()) groups.push_back({community});
+            auto& group = groups.at(community);
+            if (group.size < group.members.size()) group.members[group.size] = original[vertex_index];
+            ++group.size;
+        }
+        const auto singletons = std::count_if(groups.begin(), groups.end(), [](const Community& c) {return c.size == 1;});
+        const auto take = std::min(groups.size(), take_limit);
+        std::partial_sort(groups.begin(), groups.begin() + take, groups.end(), [](const Community& a, const Community& b) {
+            return a.size != b.size ? a.size > b.size : a.id < b.id;
+        });
+        json rows = json::array();
+        for (std::size_t i = 0; i < take; ++i) {
+            const auto& group = groups[i];
+            json members = json::array();
+            for (std::size_t j = 0; j < std::min(group.size, group.members.size()); ++j) {
+                members.push_back(vertex(group.members[j]));
+            }
+            rows.push_back({{"community_id", group.id}, {"size", group.size},
+                            {"vertex_share", static_cast<double>(group.size) / ids_.size()},
+                            {"member_examples", members}, {"members_truncated", group.size > members.size()}});
+        }
+        check_deadline();
+        return {{"algorithm", "leiden_gds_aligned_serial"}, {"gamma", settings.gamma},
+                {"weighted", weighted}, {"seed", seed}, {"source_directed", directed_},
+                {"projection", weighted ? "undirected_pair_weight_sum" : "undirected_unique_pairs_unit_weight"},
+                {"source_edges", graph_.edges().size()}, {"projected_edges", projected_edges},
+                {"projected_total_weight", projected_weight}, {"ignored_zero_weight_edges", ignored_zero_edges},
+                {"vertices", ids_.size()}, {"community_count", groups.size()}, {"total_groups", groups.size()},
+                {"largest_community_size", groups.empty() ? 0 : groups.front().size},
+                {"singleton_communities", singletons}, {"rows", rows}, {"truncated", take < groups.size()},
+                {"modularity_gamma", result.scores_defined ? json(result.modularity_gamma) : json(nullptr)},
+                {"modularity_standard", result.scores_defined ? json(result.modularity_standard) : json(nullptr)},
+                {"scores_defined", result.scores_defined}, {"score_scope", "original projected graph; Q_gamma and Q_1"},
+                {"numeric_precision", "float64 weights and scores"},
+                {"levels", result.levels}, {"max_levels", 10}, {"theta", 0.01}, {"tolerance", 1e-4},
+                {"converged", result.converged}, {"stop_reason", result.stop_reason},
+                {"member_examples_scope", "up to five members per community, numeric external ID ascending; not representative ranking"},
+                {"runtime_seconds", std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count()}};
+    }
 public:
     explicit OrdinaryGraph(const std::filesystem::path& descriptor_path) {
         const auto started = std::chrono::steady_clock::now();
@@ -93,7 +216,7 @@ public:
         dataset::Table edges(d.at("edges"),descriptor_path.parent_path(),"edges");
         metadata_=dataset::metadata(d);directed_=metadata_.at("directed").get<bool>();
         metadata_["vertex_fields"]=vertices.schema();metadata_["edge_fields"]=edges.schema();
-        metadata_["capabilities"]={"field_schema","field_profiles","attribute_filters","group_aggregation","full_graph_vertex_metrics","neighbor_queries"};
+        metadata_["capabilities"]={"field_schema","field_profiles","attribute_filters","group_aggregation","full_graph_vertex_metrics","neighbor_queries","leiden_undirected_projection"};
         const auto progress=[](const std::string& phase,std::uint64_t records) {
             std::cout<<json({{"type","progress"},{"phase",phase},{"records",records}}).dump()<<std::endl;
         };
@@ -149,8 +272,9 @@ public:
         result["total_weight"]=total_weight_;result["load_seconds"]=load_seconds_;result["storage"]="KHyperGraph / level 1";
         return result;
     }
-    json call(const std::string& op,const json& p) const {
+    json call(const std::string& op,const json& p, double execution_timeout_seconds = 180.0) const {
         if(op=="get_dataset_info") return info();
+        if(op=="detect_communities_leiden") return detect_communities(p, execution_timeout_seconds);
         const QueryEngine queries(graph_,ids_,metadata_,directed_);
         if(QueryEngine::handles(op))return queries.call(op,p);
         if(op=="search_vertices") {
@@ -242,7 +366,7 @@ int main(int argc,char** argv) {
             json id=nullptr;
             try {
                 const auto request=json::parse(line); id=request.value("id",json());
-                const auto result=graph.call(request.at("tool").get<std::string>(),request.value("arguments",json::object()));
+                const auto result=graph.call(request.at("tool").get<std::string>(),request.value("arguments",json::object()), request.value("execution_timeout_seconds", 180.0));
                 std::cout<<json({{"id",id},{"ok",true},{"data",result}}).dump()<<std::endl;
             }catch(const std::exception& e){std::cout<<json({{"id",id},{"ok",false},{"error",e.what()}}).dump()<<std::endl;}
         }
